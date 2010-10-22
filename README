@@ -1,7 +1,12 @@
 @author Frans Rosén (Young / Skilled www.youngskilled.com)
 @date 2010-10-22
 
-Uses Google Calendar API to register "Arriving" and "Leaving" commands per user using it. Fetches time from The Institute for Telecommunication Sciences's time server and syncs it with Google Calendar when sending the event.
+Uses Google Calendar API to register "Arriving" and "Leaving" commands per user using it. 
+Fetches time from The Institute for Telecommunication Sciences's time server and syncs 
+it with Google Calendar when sending the event.
 
-Compile your code with AIR 2.0. If you want the icon, but it in the "bin-release"-directory upon building to attach it with the app.
-Remember to insert credentials for a Google Account, could be both Hosted or regular Google Account, more information inside the code.
+Compile your code with AIR 2.0. If you want the icon, but it in the "bin-release"-directory
+upon building to attach it with the app.
+
+Remember to insert credentials for a Google Account, could be both Hosted or regular 
+Google Account, more information inside the code.
