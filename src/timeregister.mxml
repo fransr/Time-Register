@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009" 
+					   xmlns:s="library://ns.adobe.com/flex/spark" 
+					   xmlns:mx="library://ns.adobe.com/flex/mx" applicationComplete="applicationInit();" initialize="init()" width="306" height="102" showStatusBar="true" backgroundColor="#FFFFFF">
+	<s:TextInput visible="false" id="registerUserName" width="120" x="10" y="10" color="#000000" fontSize="11"/>
+	<s:Button visible="false" id="registerUser" x="10" y="40" label="REGISTER NAME" click="saveUser()" buttonMode="true" chromeColor="#F3610A" fontWeight="bold" fontSize="11" color="#FFFFFF"/>
+	<s:Button id="toWork" styleName="toWork" x="10" y="10" label="ARRIVING" click="registerEntry('arriving')" width="284" buttonMode="true" height="35" chromeColor="#098600" color="#FFFFFF" fontWeight="bold" fontSize="11"/>
+	<s:Button visible="false" id="fromWork" styleName="fromWork" x="10" y="10" label="LEAVING" click="registerEntry('leaving')" width="284" height="65" buttonMode="true" color="#FFFFFF" fontSize="11" fontWeight="bold" chromeColor="#FF0000"/>
+	<s:Button id="alreadyArrived" styleName="alreadyArrived" x="10" y="50" label="ALREADY ARRIVED" click="registerAlreadyArrived()" width="284" height="25" buttonMode="true" color="#FFFFFF" fontSize="11" fontWeight="bold" chromeColor="#F3610A"/>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+		<s:HTTPService id="google"
+					   url="https://www.google.com/accounts/ClientLogin"
+					   method="POST"
+					   contentType="application/x-www-form-urlencoded"              
+					   result="handleLoginPlain(event);"
+					   fault="handleLoginFault(event);">
+			<mx:request xmlns="">
+				<!-- Insert your credentials here -->
+				<!-- If you are using HOSTED solution, let this be HOSTED, else change to GOOGLE -->
+				<accountType>HOSTED</accountType>
+				<Email>email@email</Email>
+				<Passwd>password</Passwd>
+				<source>TimeRegister</source>
+				<service>cl</service>
+			</mx:request>
+		</s:HTTPService>
+	</fx:Declarations>
+	<fx:Script>
+		<![CDATA[
+			/** TimeRegister
+			 * @author Frans Rosén Y/S www.youngskilled.com
+			 * @version 1.3
+			 */
+			private var authUser:String;
+			private var workSetting:String;
+			private var file:String = 'timeregister';
+			private var create_tries:int = 0;
+			private var created:Boolean = false;
+			
+			import flash.filesystem.*;
+			
+			import mx.controls.Alert;
+			import mx.events.CloseEvent;
+			import mx.rpc.events.FaultEvent;
+			import mx.rpc.events.ResultEvent;
+			import mx.rpc.xml.SimpleXMLEncoder;
+			import mx.utils.Base64Decoder;
+			import mx.utils.Base64Encoder;
+			
+			private var baseDecoder:Base64Decoder = new Base64Decoder();
+			private var baseEncoder:Base64Encoder = new Base64Encoder();
+
+			private var calendar:URLLoader = new URLLoader();
+			
+			private var socket:Socket;
+			private const socketServer:String = "time-a.timefreq.bldrdoc.gov";
+			private const socketOffset:int = 0;
+			private const socketPort:int = 13;
+			
+			private const ARRIVING:String = 'arriving';
+			private const LEAVING:String = 'leaving';
+			
+			private var event:Object = {date:'',time:'',zone:''};
+			
+			
+			[Bindable]
+			private var myResult:XML;
+			private var AuthString:String;
+			private var request:HTTPService;
+			private var closeAlertShow:Boolean = false;
+			private var hasArrived:Boolean = false;
+			
+			/**
+			 * Initialization, if it sees that you're not registered a name, it asks for it, and runs again when inserted.
+			 */
+			private function init():void {
+				var fileHandler:File = File.applicationStorageDirectory.resolvePath( file );
+				if(fileHandler.exists) {
+					var stream:FileStream = new FileStream();
+					stream.open( fileHandler, FileMode.READ );
+					var data:String = stream.readUTFBytes( stream.bytesAvailable );
+					baseDecoder.decode(data);
+					data = baseDecoder.flush().toString();
+					authUser = data;
+					toWork.visible = true;
+					fromWork.visible = false;
+					alreadyArrived.visible = true;
+					registerUser.visible = false;
+					registerUserName.visible = false;
+					this.status = data;
+				} else {
+					toWork.visible = false;
+					fromWork.visible = false;
+					alreadyArrived.visible = false;
+					registerUser.visible = true;
+					registerUserName.visible = true;
+					this.status = 'No user registered';
+				}
+			};
+			/**
+			 * Adds a event upon closing, so we could check if the user has checked out first.
+			 */
+			private function applicationInit():void {
+				addEventListener(Event.CLOSING, onExiting);
+			}
+			/**
+			 * When new user saves it's name, save it to application Storage.
+			 */
+			private function saveUser():void {
+				var data:String = registerUserName.text;
+				if(data.length > 0) {
+					baseEncoder.encodeUTFBytes(data);
+					data = baseEncoder.toString();
+					var fileHandler:File = File.applicationStorageDirectory.resolvePath( file );
+					var stream:FileStream = new FileStream();
+					stream.open( fileHandler, FileMode.WRITE );
+					stream.writeUTFBytes(data);
+					stream.close();
+					init();
+				}
+			}
+			/**
+			 * When user is already arrived, ie done a reboot of some kind, 
+			 * this enables "checked in"-mode without sending anything to google.
+			 */
+			private function registerAlreadyArrived():void {
+				this.hasArrived = true;
+				alreadyArrived.visible = false;
+				activateLeaving();
+				this.status = authUser + ' has arrived';
+			}
+			/**
+			 * Starts the process of adding an event to Google Calendar.
+			 */
+			private function registerEntry(str:String):void {
+				toWork.enabled = false;
+				fromWork.enabled = false;
+				alreadyArrived.enabled = false;
+				workSetting = str;
+				this.status = 'Signing in to Google...';
+				google.send();
+				switch(workSetting) {
+					case this.ARRIVING: 
+						this.hasArrived = true;
+						break;
+					case this.LEAVING:
+						this.hasArrived = false;
+						break;
+				}
+			}
+			/**
+			 * Parsing the header of the Google API Sign in, getting the Auth-key
+			 */
+			private function handleLoginPlain(event:ResultEvent):void {
+				var textindex:int;
+				AuthString = event.result.toString();
+				textindex = AuthString.search("Auth");
+				AuthString = AuthString.substring(textindex);
+				AuthString = AuthString.replace("Auth=","");
+				textindex = AuthString.length;
+				textindex = textindex - 1;
+				AuthString = AuthString.substring(0,textindex);
+				this.status = 'Fetching current time...';
+				getCurrentTime();
+			} 
+			/**
+			 * Upon error when signing in
+			 */
+			public function handleLoginFault(event:FaultEvent):void {
+				Alert.show(event.fault.faultString, "Error");
+				this.status = 'Could not sign in to Google';
+				toWork.enabled = true;
+				fromWork.enabled = true;
+				alreadyArrived.enabled = true;
+			}  
+			/**
+			 * Connects through socket to timeserver to fetch time information
+			 */
+			private function getCurrentTime():void {
+				socket = new Socket();
+				socket.connect(socketServer, socketPort);
+				socket.addEventListener(ProgressEvent.SOCKET_DATA, socketDataHandler);
+			}
+			/**
+			 * Recieves the timestamp and starts sending it all to Google Calendar.
+			 */
+			private function socketDataHandler(event:ProgressEvent):void {
+				var fullTime:Array = socket.readUTFBytes(socket.bytesAvailable).split(" ");
+				this.event.date = fullTime[1]
+				this.event.time = fullTime[2];
+				this.event.zone = fullTime[7].split('(')[0];
+				socket.close();
+				created = false;
+				create_tries = 0;
+				this.status = 'Sending event to Google Calendar...';
+				sendRegisteredEvent();
+			}
+			/**
+			 * This function is sending the event to Google Calendar API, could run multiple times 
+			 * due to strange behaviour in URLRequest handling of status 302 responses
+			 */
+			private function sendRegisteredEvent():void {  
+				// Count tries, so it only forces once.
+				this.create_tries++;
+				var eventTitle:String = authUser + ' ' + (workSetting == 'leaving'?'&laquo;':'&raquo;');
+				var eventContent:String = "";
+				var eventWhere:String = "Work";
+				var eventStart:String = '20' + this.event.date + 'T' + this.event.time + '.000Z';
+				var eventEnd:String = '20' + this.event.date + 'T' + this.event.time + '.000Z';
+				var entryXML:XML = <entry xmlns="http://www.w3.org/2005/Atom" xmlns:gd="http://schemas.google.com/g/2005">
+				<category scheme="http://schemas.google.com/g/2005#kind" term="http://schemas.google.com/g/2005#event"></category>
+				<gd:transparency value="http://schemas.google.com/g/2005#event.opaque"></gd:transparency>
+				<gd:eventStatus value="http://schemas.google.com/g/2005#event.confirmed"></gd:eventStatus>
+				<title type="text">{eventTitle}</title>
+				<content type="text">{eventContent}</content>
+				<gd:where valueString={eventWhere}></gd:where>
+				<gd:when startTime={eventStart}></gd:when>
+				</entry>;
+				
+				var r:URLRequest = new URLRequest("https://www.google.com/calendar/feeds/default/private/full");
+				var header:URLRequestHeader = new URLRequestHeader("Authorization", "GoogleLogin auth="+AuthString.toString()); 
+				r.data = entryXML;
+				r.followRedirects = true;
+				r.method = URLRequestMethod.POST;
+				r.requestHeaders.push(header);
+				r.contentType = "application/atom+xml";
+				this.calendar.addEventListener(HTTPStatusEvent.HTTP_STATUS, function(e:HTTPStatusEvent):void {
+					if(e.status == 201) {
+						created = true;
+					}
+					handlePlaindata();
+				});
+				this.calendar.addEventListener(IOErrorEvent.IO_ERROR, handlePlaindataError);
+				this.calendar.load(r);
+			}
+			/**
+			 * Analyzes the HTTPStatus and sees if the event was successfully registered.
+			 */
+			public function handlePlaindata():void {
+				if(!created && create_tries <= 1) {
+					this.status = 'Trying to force create of event...';
+					sendRegisteredEvent();
+					return;
+				}
+				if(this.hasArrived) {
+					activateLeaving();
+					var d:Date = new Date();
+					this.status = authUser + ' arrived ' + d.getHours() + ':' + d.getMinutes();
+				} else {
+					NativeApplication.nativeApplication.exit();
+				}
+			}  
+			/**
+			 * On error when posting it to Google Calendar API
+			 */
+			public function handlePlaindataError(event:Event):void {
+				this.status = 'Could not send event';
+				if(this.hasArrived) {
+					toWork.enabled = true;
+					fromWork.enabled = false;
+					alreadyArrived.enabled = true;
+				} else {
+					toWork.enabled = false;
+					fromWork.enabled = true;
+					alreadyArrived.enabled = false;
+				}
+			}  
+			/**
+			 * When leaving command is successfully recieved.
+			 */
+			private function activateLeaving():void {
+				this.stage.nativeWindow.minimize();
+				fromWork.visible = true;
+				fromWork.enabled = true;
+				alreadyArrived.enabled = true;
+				alreadyArrived.visible = false;
+				toWork.visible = false;
+			}
+			/**
+			 * Event when trying to close application, only closes directly if you're not checked, else it 
+			 * asks for checking out.
+			 */
+			private function onExiting(e:Event):void {
+				if(this.hasArrived) {
+					e.preventDefault();
+					this.stage.nativeWindow.restore();
+					if(!this.closeAlertShow) {
+						this.closeAlertShow = true;
+						Alert.yesLabel = 'YES';
+						Alert.noLabel = 'NO';
+						Alert.show("Send LEAVING command to calendar?", "Exit Time Register", Alert.YES | Alert.NO, null, closeApplication, null, 2);
+					}
+				}
+			}
+			/**
+			 * When asking to close the application with leaving command being sent.
+			 */
+			private function closeApplication(e:CloseEvent):void {
+				this.closeAlertShow = false;
+				if(e.detail == Alert.NO) {
+					NativeApplication.nativeApplication.exit();
+				} else {
+					e.preventDefault();
+					registerEntry(LEAVING);
+				}
+			}
+		]]>
+	</fx:Script>
+</s:WindowedApplication>

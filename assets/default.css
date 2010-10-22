@@ -1,0 +1,53 @@
+WindowedApplication {
+    backgroundColor: white;
+    paddingLeft: 10;
+    paddingTop: 10;
+}
+
+.toWork {
+    fillColors: #00af2e, #02911a, #02911a, #02911a;
+}
+.fromWork {
+    fillColors: #d51140, #900829, #900829, #900829;
+}
+
+Button {
+   cornerRadius: 0;
+   highlightAlphas: 0, 0;
+   fillAlphas: 1, 1, 1, 1;
+   fillColors: #ec9764, #ec823d, #ec823d, #ec823d;
+   color: #ffffff;
+   textRollOverColor: #ffffff;
+   textSelectedColor: #000000;
+   borderColor: #000000;
+   themeColor: #000000;
+   fontFamily: Arial;
+   fontSize: 11;
+   fontWeight: bold;
+}
+
+Alert {
+    shadowDirection: right;
+    color: #000;
+    buttonStyleName: "alertButton";
+    title-style-name : "alertTitle"; 
+    background-color: #ffffff; 
+    header-height:19; 
+    header-colors : #fff, #fff; 
+    footer-colors : #9db6d9, #ffffff; 
+    drop-shadow-enabled: true;
+    drop-shadow-color :#243322;
+    corner-radius :0;
+    border-style :solid;
+    border-thickness: 1;
+    border-color : #243322;
+    corner-color: #000;
+}
+
+.alertButton {
+    color: white;
+}
+
+.alertTitle{ 
+    color :#000; 
+} 
